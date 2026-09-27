@@ -73,7 +73,7 @@ build_service() {
 docker_pull_with_retry() {
     local source=$1 retries timeout_seconds attempt=1 status delay
     retries=$(env_value NETWORKAUTH_PULL_RETRIES 3)
-    timeout_seconds=$(env_value NETWORKAUTH_PULL_TIMEOUT 1800)
+    timeout_seconds=$(env_value NETWORKAUTH_PULL_TIMEOUT 600)
     while (( attempt <= retries )); do
         info "正在拉取基础镜像: $source（第 ${attempt}/${retries} 次）"
         # Docker keeps completed layers when a pull is interrupted.  A retry
@@ -174,7 +174,7 @@ ensure_env() {
         log_max_file=${NETWORKAUTH_LOG_MAX_FILE:-5}
         pull_images=${NETWORKAUTH_PULL_IMAGES:-1}
         pull_retries=${NETWORKAUTH_PULL_RETRIES:-3}
-        pull_timeout=${NETWORKAUTH_PULL_TIMEOUT:-1800}
+        pull_timeout=${NETWORKAUTH_PULL_TIMEOUT:-600}
         docker_registry=${NETWORKAUTH_DOCKER_REGISTRY:-docker.io}
         apt_mirror=${NETWORKAUTH_APT_MIRROR:-http://deb.debian.org/debian}
         apt_security_mirror=${NETWORKAUTH_APT_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
@@ -267,7 +267,7 @@ validate_env_values() {
     log_file=$(env_value NETWORKAUTH_LOG_MAX_FILE 5)
     pull_images=$(env_value NETWORKAUTH_PULL_IMAGES 1)
     pull_retries=$(env_value NETWORKAUTH_PULL_RETRIES 3)
-    pull_timeout=$(env_value NETWORKAUTH_PULL_TIMEOUT 1800)
+    pull_timeout=$(env_value NETWORKAUTH_PULL_TIMEOUT 600)
     docker_registry=$(env_value NETWORKAUTH_DOCKER_REGISTRY docker.io)
     apt_mirror=$(env_value NETWORKAUTH_APT_MIRROR http://deb.debian.org/debian)
     apt_security_mirror=$(env_value NETWORKAUTH_APT_SECURITY_MIRROR http://deb.debian.org/debian-security)
@@ -502,7 +502,7 @@ mirror_profile() {
             printf 'NETWORKAUTH_BASE_DEBIAN_IMAGE=%s\n' "$(env_value NETWORKAUTH_BASE_DEBIAN_IMAGE debian:bookworm-slim)"
             printf 'NETWORKAUTH_PULL_IMAGES=%s\n' "$(env_value NETWORKAUTH_PULL_IMAGES 1)"
             printf 'NETWORKAUTH_PULL_RETRIES=%s\n' "$(env_value NETWORKAUTH_PULL_RETRIES 3)"
-            printf 'NETWORKAUTH_PULL_TIMEOUT=%s\n' "$(env_value NETWORKAUTH_PULL_TIMEOUT 1800)"
+            printf 'NETWORKAUTH_PULL_TIMEOUT=%s\n' "$(env_value NETWORKAUTH_PULL_TIMEOUT 600)"
             ;;
         china)
             registry=${2:-m.daocloud.io/docker.io}

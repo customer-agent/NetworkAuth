@@ -37,11 +37,15 @@ tools/networkauth.sh mirror show
 Registry pull-through cache。
 
 基础镜像拉取默认失败后重试 3 次，每次使用 Docker 已保存的镜像层继续下载，并以
-`NETWORKAUTH_PULL_TIMEOUT=1800`（秒）限制单次拉取时间；可在
+`NETWORKAUTH_PULL_TIMEOUT=600`（秒）限制单次拉取时间；可在
 `deploy/networkauth.env` 中调整 `NETWORKAUTH_PULL_RETRIES` 和
 `NETWORKAUTH_PULL_TIMEOUT`。将超时设为 `0` 可关闭脚本层超时（仍受 Docker daemon
 网络超时影响）。如果手动按 `Ctrl-C` 中断，脚本会退出而不会自动继续，下一次安装会
 复用已经下载完成的层。
+
+如果基础镜像仍长时间停在多个 `Waiting` 层，低带宽主机可以在 Docker daemon 的
+`/etc/docker/daemon.json` 中将 `max-concurrent-downloads` 调为 `1` 后重启 Docker；
+该设置由主机管理员维护，脚本不会自动改动 Docker daemon 配置。
 
 如果前端在另一台公网主机上反代，脚本默认监听 `0.0.0.0:8080`；请在防火墙中只
 允许公网反代主机访问该端口，也可以把 `NETWORKAUTH_BIND_ADDRESS` 改为具体内网
