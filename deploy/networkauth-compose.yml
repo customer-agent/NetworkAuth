@@ -1,0 +1,43 @@
+services:
+  networkauth:
+    build:
+      context: ${NETWORKAUTH_BUILD_CONTEXT:-..}
+      dockerfile: deploy/networkauth.Dockerfile
+      args:
+        BUILD_VERSION: ${NETWORKAUTH_IMAGE_TAG:-source}
+        GOPROXY: ${NETWORKAUTH_GOPROXY:-https://goproxy.cn,direct}
+        NPM_REGISTRY: ${NETWORKAUTH_NPM_REGISTRY:-https://registry.npmmirror.com}
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+    image: ${NETWORKAUTH_IMAGE:-networkauth-local}:${NETWORKAUTH_IMAGE_TAG:-latest}
+    container_name: ${NETWORKAUTH_CONTAINER_NAME:-networkauth}
+    restart: unless-stopped
+    init: true
+    user: "${NETWORKAUTH_UID:-1000}:${NETWORKAUTH_GID:-1000}"
+    command: ["--config", "/app/config/config.json", "server", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "${NETWORKAUTH_BIND_ADDRESS:-0.0.0.0}:${NETWORKAUTH_PORT:-8080}:8080"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    logging:
+      driver: json-file
+      options:
+        max-size: "${NETWORKAUTH_LOG_MAX_SIZE:-10m}"
+        max-file: "${NETWORKAUTH_LOG_MAX_FILE:-5}"
+    volumes:
+      - ./networkauth-data:/app/data
+      - ./networkauth-logs:/app/logs
+      - ./networkauth-config:/app/config
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

@@ -1,0 +1,35 @@
+name: NetworkAuth Docker smoke test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start NetworkAuth
+        env:
+          NETWORKAUTH_BIND_ADDRESS: 127.0.0.1
+          NETWORKAUTH_PORT: 18080
+        run: |
+          chmod +x tools/networkauth.sh
+          tools/networkauth.sh install
+      - name: Check HTTP endpoint
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 3 http://127.0.0.1:18080/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          tools/networkauth.sh status
+          exit 1
+      - name: Show service status on failure
+        if: failure()
+        run: tools/networkauth.sh status || true
+      - name: Stop service
+        if: always()
+        run: tools/networkauth.sh down || true

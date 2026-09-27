@@ -387,7 +387,13 @@ func finishMemberLogin(db *gorm.DB, app *models.App, member *models.Member, mach
 		}
 		// 机器码/IP绑定：事务内执行、受账号锁保护，杜绝并发超绑。
 		// 已绑定放行；未绑定且未超多开则新增；超出则拒绝
-		if app.MachineVerify == 1 && strings.TrimSpace(machineCode) != "" {
+		// Machine verification must not be bypassable by submitting an empty
+		// machine_code. An empty value cannot establish a device binding and
+		// would otherwise fall back to a per-session key.
+		if app.MachineVerify == 1 {
+			if strings.TrimSpace(machineCode) == "" {
+				return errors.New("请提供机器码")
+			}
 			if err := ensureMachineBinding(tx, member.UUID, machineCode, deviceName, effMultiOpen); err != nil {
 				return err
 			}

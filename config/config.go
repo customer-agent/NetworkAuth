@@ -188,8 +188,11 @@ func Init(cfgFilePath string) {
 		if err := os.MkdirAll(filepath.Dir(cfgFilePath), 0755); err != nil {
 			log.WithField("err", err).Fatal("创建配置目录失败")
 		}
-		if err := os.WriteFile(cfgFilePath, configBytes, 0644); err != nil {
+		if err := os.WriteFile(cfgFilePath, configBytes, 0600); err != nil {
 			log.WithField("err", err).Fatal("写入配置文件失败")
+		}
+		if err := os.Chmod(cfgFilePath, 0600); err != nil {
+			log.WithField("err", err).Fatal("设置配置文件权限失败")
 		}
 		if len(fileContent) == 0 {
 			log.Info("已成功生成并加载默认配置")
@@ -235,7 +238,10 @@ func SaveConfig(appConfig *AppConfig) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(currentConfigFilePath, configBytes, 0644); err != nil {
+	if err := os.WriteFile(currentConfigFilePath, configBytes, 0600); err != nil {
+		return err
+	}
+	if err := os.Chmod(currentConfigFilePath, 0600); err != nil {
 		return err
 	}
 	viper.SetConfigFile(currentConfigFilePath)

@@ -107,11 +107,25 @@ NetworkAuth/
 ### Docker 部署
 
 ```bash
-# 构建镜像
-docker build -t networkauth .
+# 推荐使用 wws_dev 分支的一键部署脚本
+git clone -b wws_dev https://github.com/customer-agent/NetworkAuth.git
+cd NetworkAuth
+chmod +x tools/networkauth.sh
+tools/networkauth.sh install
+```
 
-# 运行容器
-docker run -d -p 8080:8080 networkauth
+脚本会在当前仓库的 `deploy/` 目录保存 SQLite 数据、配置和日志，并提供
+`status`、`logs`、`backup`、`update`、`restart` 和 `down` 命令。详细的反代、账号
+管理和一机一号配置见 [`deploy/README.md`](deploy/README.md)。首次启动后访问
+`http://127.0.0.1:8080/` 完成前端初始化；公网部署请使用
+`https://auth.weisong.space` 反代。
+
+如需手动构建镜像，Dockerfile 位于 `deploy/networkauth.Dockerfile`：
+
+```bash
+docker compose --project-directory deploy -f deploy/networkauth-compose.yml build
+
+docker compose --project-directory deploy -f deploy/networkauth-compose.yml up -d
 ```
 
 ### 生产环境部署

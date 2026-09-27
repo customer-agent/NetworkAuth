@@ -48,3 +48,11 @@ node_modules/
 # 屏蔽构建的前端产物
 public/dist/
 public/dist/**
+
+# NetworkAuth Docker deployment state and local archives
+deploy/networkauth.env
+deploy/networkauth-config/
+deploy/networkauth-data/
+deploy/networkauth-logs/
+deploy/networkauth-backup-*.tar.gz
+deploy/.networkauth-build.*
