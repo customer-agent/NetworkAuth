@@ -542,7 +542,7 @@ usage() {
   shell        进入运行中的容器
   setup        打印应用 UUID/密钥、账号和单设备绑定的前端配置步骤
   mirror show  查看 Docker、APT、npm、Go 当前下载源
-  mirror china [registry]  切换中国大陆下载源（默认 docker.m.daocloud.io）
+  mirror china [registry]  切换中国大陆下载源（默认 m.daocloud.io/docker.io）
   mirror official         恢复官方下载源
 EOF
 }
