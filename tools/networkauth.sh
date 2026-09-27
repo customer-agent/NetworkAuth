@@ -42,7 +42,11 @@ git_repo() {
 
 source_is_clean() {
     ensure_source_repo
-    [[ -z "$(git_repo status --porcelain --untracked-files=all)" ]] ||
+    local status_output
+    if ! status_output=$(git_repo status --porcelain --untracked-files=all); then
+        die '无法检查源码工作区，请确认 Git 可用且当前目录是有效仓库'
+    fi
+    [[ -z "$status_output" ]] ||
         die '源码工作区有未提交修改或未跟踪文件，请提交或清理后再构建/升级'
 }
 
