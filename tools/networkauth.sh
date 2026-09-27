@@ -435,8 +435,8 @@ mirror_profile() {
             validate_docker_registry "$registry"
             ensure_env
             set_env_value NETWORKAUTH_DOCKER_REGISTRY "$registry"
-            set_env_value NETWORKAUTH_APT_MIRROR https://mirrors.tuna.tsinghua.edu.cn/debian
-            set_env_value NETWORKAUTH_APT_SECURITY_MIRROR https://mirrors.tuna.tsinghua.edu.cn/debian-security
+            set_env_value NETWORKAUTH_APT_MIRROR http://mirrors.tuna.tsinghua.edu.cn/debian
+            set_env_value NETWORKAUTH_APT_SECURITY_MIRROR http://mirrors.tuna.tsinghua.edu.cn/debian-security
             set_env_value NETWORKAUTH_NPM_REGISTRY https://registry.npmmirror.com
             set_env_value NETWORKAUTH_GOPROXY https://goproxy.cn,direct
             set_env_value NETWORKAUTH_BASE_NODE_IMAGE networkauth-base-node:22-bookworm

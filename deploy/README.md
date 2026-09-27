@@ -21,7 +21,8 @@ tools/networkauth.sh install
 按 600 权限创建，不要提交到 Git。
 
 `mirror china` 会把 Docker Hub 基础镜像、Debian 软件包、npm 和 Go 模块切换到
-可配置的国内源，默认 Docker 镜像前缀为 `m.daocloud.io/docker.io`。如所在网络访问该
+可配置的国内源，默认 Docker 镜像前缀为 `m.daocloud.io/docker.io`。APT 使用清华 HTTP
+镜像（Debian 仍校验仓库签名）；如所在网络访问该
 镜像不稳定，可以指定其他兼容 Docker Registry 的前缀，例如：
 
 ```bash

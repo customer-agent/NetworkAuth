@@ -98,8 +98,8 @@ assert_common_settings_preserved() {
 
 assert_china_defaults() {
     assert_env NETWORKAUTH_DOCKER_REGISTRY m.daocloud.io/docker.io
-    assert_env NETWORKAUTH_APT_MIRROR https://mirrors.tuna.tsinghua.edu.cn/debian
-    assert_env NETWORKAUTH_APT_SECURITY_MIRROR https://mirrors.tuna.tsinghua.edu.cn/debian-security
+    assert_env NETWORKAUTH_APT_MIRROR http://mirrors.tuna.tsinghua.edu.cn/debian
+    assert_env NETWORKAUTH_APT_SECURITY_MIRROR http://mirrors.tuna.tsinghua.edu.cn/debian-security
     assert_env NETWORKAUTH_NPM_REGISTRY https://registry.npmmirror.com
     assert_env NETWORKAUTH_GOPROXY https://goproxy.cn,direct
     assert_env NETWORKAUTH_BASE_NODE_IMAGE networkauth-base-node:22-bookworm
