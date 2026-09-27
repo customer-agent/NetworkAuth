@@ -5,6 +5,12 @@ services:
       dockerfile: deploy/networkauth.Dockerfile
       args:
         BUILD_VERSION: ${NETWORKAUTH_IMAGE_TAG:-source}
+        DOCKER_REGISTRY: ${NETWORKAUTH_DOCKER_REGISTRY:-docker.io}
+        BASE_NODE_IMAGE: ${NETWORKAUTH_BASE_NODE_IMAGE:-node:22-bookworm}
+        BASE_GOLANG_IMAGE: ${NETWORKAUTH_BASE_GOLANG_IMAGE:-golang:1.25-bookworm}
+        BASE_DEBIAN_IMAGE: ${NETWORKAUTH_BASE_DEBIAN_IMAGE:-debian:bookworm-slim}
+        APT_MIRROR: ${NETWORKAUTH_APT_MIRROR:-http://deb.debian.org/debian}
+        APT_SECURITY_MIRROR: ${NETWORKAUTH_APT_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
         GOPROXY: ${NETWORKAUTH_GOPROXY:-https://goproxy.cn,direct}
         NPM_REGISTRY: ${NETWORKAUTH_NPM_REGISTRY:-https://registry.npmmirror.com}
         HTTP_PROXY: ${HTTP_PROXY:-}

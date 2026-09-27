@@ -8,6 +8,8 @@ V2、Git 和 curl。
 git clone -b wws_dev <NetworkAuth仓库地址> NetworkAuth
 cd NetworkAuth
 chmod +x tools/networkauth.sh
+# 中国大陆网络建议先切换镜像源，再安装
+tools/networkauth.sh mirror china
 tools/networkauth.sh install
 ```
 
@@ -17,6 +19,21 @@ tools/networkauth.sh install
 分别位于 `deploy/networkauth-data`、`deploy/networkauth-logs`、
 `deploy/networkauth-config` 和 `deploy/networkauth.env`；环境文件和配置文件已经
 按 600 权限创建，不要提交到 Git。
+
+`mirror china` 会把 Docker Hub 基础镜像、Debian 软件包、npm 和 Go 模块切换到
+可配置的国内源，默认 Docker 镜像前缀为 `m.daocloud.io/docker.io`。如所在网络访问该
+镜像不稳定，可以指定其他兼容 Docker Registry 的前缀，例如：
+
+```bash
+tools/networkauth.sh mirror china m.daocloud.io/docker.io
+tools/networkauth.sh mirror show
+```
+
+`tools/networkauth.sh mirror official` 可恢复 Docker Hub、Debian 官方源、npmjs 和
+官方 Go proxy。`NETWORKAUTH_PULL_IMAGES=0` 只是不强制更新基础镜像；本机没有所需
+镜像时，Docker 仍会从当前配置的镜像前缀拉取。公共镜像可能有缓存延迟、限流或高峰
+拥堵，无法保证所有中国网络和时段都可达；生产环境也可以在自己的网络中配置 Docker
+Registry pull-through cache。
 
 如果前端在另一台公网主机上反代，脚本默认监听 `0.0.0.0:8080`；请在防火墙中只
 允许公网反代主机访问该端口，也可以把 `NETWORKAUTH_BIND_ADDRESS` 改为具体内网

@@ -10,6 +10,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - name: Test China mirror profiles without pulling images
+        run: bash tools/test-networkauth-mirrors.sh
       - name: Build and start NetworkAuth
         env:
           NETWORKAUTH_BIND_ADDRESS: 127.0.0.1

@@ -56,3 +56,4 @@ deploy/networkauth-data/
 deploy/networkauth-logs/
 deploy/networkauth-backup-*.tar.gz
 deploy/.networkauth-build.*
+deploy/networkauth.env.tmp.*

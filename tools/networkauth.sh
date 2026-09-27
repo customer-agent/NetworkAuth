@@ -37,11 +37,51 @@ source_is_clean() {
 build_service() {
     ensure_source_repo
     source_is_clean
+    prepare_base_images
+    local registry
+    registry=$(env_value NETWORKAUTH_DOCKER_REGISTRY docker.io)
+    # A custom registry is pulled and retagged locally first. BuildKit then
+    # consumes local base tags instead of issuing an unsupported registry HEAD
+    # request to some public mirrors.
+    if [[ "$registry" != docker.io ]]; then
+        compose build
+        return
+    fi
     case "$(env_value NETWORKAUTH_PULL_IMAGES 1)" in
         1) compose build --pull ;;
         0) compose build ;;
         *) die 'NETWORKAUTH_PULL_IMAGES 必须是 0 或 1' ;;
     esac
+}
+
+prepare_base_images() {
+    local registry pull_images source local_tag image_name image_tag
+    registry=$(env_value NETWORKAUTH_DOCKER_REGISTRY docker.io)
+    pull_images=$(env_value NETWORKAUTH_PULL_IMAGES 1)
+    if [[ "$registry" == docker.io ]]; then
+        set_env_value NETWORKAUTH_BASE_NODE_IMAGE node:22-bookworm
+        set_env_value NETWORKAUTH_BASE_GOLANG_IMAGE golang:1.25-bookworm
+        set_env_value NETWORKAUTH_BASE_DEBIAN_IMAGE debian:bookworm-slim
+        return 0
+    fi
+    for image_name in node golang debian; do
+        case "$image_name" in
+            node) image_tag=22-bookworm; local_tag=networkauth-base-node:22-bookworm ;;
+            golang) image_tag=1.25-bookworm; local_tag=networkauth-base-golang:1.25-bookworm ;;
+            debian) image_tag=bookworm-slim; local_tag=networkauth-base-debian:bookworm-slim ;;
+        esac
+        source="$registry/library/$image_name:$image_tag"
+        if [[ "$pull_images" == 1 ]] || ! docker image inspect "$local_tag" >/dev/null 2>&1; then
+            info "正在拉取基础镜像: $source"
+            docker pull "$source" || die "无法拉取基础镜像: $source"
+            docker tag "$source" "$local_tag"
+        fi
+        case "$image_name" in
+            node) set_env_value NETWORKAUTH_BASE_NODE_IMAGE "$local_tag" ;;
+            golang) set_env_value NETWORKAUTH_BASE_GOLANG_IMAGE "$local_tag" ;;
+            debian) set_env_value NETWORKAUTH_BASE_DEBIAN_IMAGE "$local_tag" ;;
+        esac
+    done
 }
 
 compose() {
@@ -50,7 +90,7 @@ compose() {
 
 ensure_env() {
     if [[ ! -f "$ENV_FILE" ]]; then
-        local run_uid run_gid bind_address bind_port container_name image image_tag timezone trusted_proxies cors_origins health_timeout log_max_size log_max_file pull_images
+        local run_uid run_gid bind_address bind_port container_name image image_tag timezone trusted_proxies cors_origins health_timeout log_max_size log_max_file pull_images docker_registry apt_mirror apt_security_mirror npm_registry goproxy base_node_image base_golang_image base_debian_image
         run_uid=${NETWORKAUTH_UID:-$(id -u)}
         run_gid=${NETWORKAUTH_GID:-$(id -g)}
         if [[ "$run_uid" == 0 ]]; then
@@ -69,6 +109,14 @@ ensure_env() {
         log_max_size=${NETWORKAUTH_LOG_MAX_SIZE:-10m}
         log_max_file=${NETWORKAUTH_LOG_MAX_FILE:-5}
         pull_images=${NETWORKAUTH_PULL_IMAGES:-1}
+        docker_registry=${NETWORKAUTH_DOCKER_REGISTRY:-docker.io}
+        apt_mirror=${NETWORKAUTH_APT_MIRROR:-http://deb.debian.org/debian}
+        apt_security_mirror=${NETWORKAUTH_APT_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
+        npm_registry=${NETWORKAUTH_NPM_REGISTRY:-https://registry.npmmirror.com}
+        goproxy=${NETWORKAUTH_GOPROXY:-https://goproxy.cn,direct}
+        base_node_image=${NETWORKAUTH_BASE_NODE_IMAGE:-node:22-bookworm}
+        base_golang_image=${NETWORKAUTH_BASE_GOLANG_IMAGE:-golang:1.25-bookworm}
+        base_debian_image=${NETWORKAUTH_BASE_DEBIAN_IMAGE:-debian:bookworm-slim}
         cat >"$ENV_FILE" <<EOF
 # NetworkAuth deployment settings.  This file is shell/.env syntax; do not
 # commit it when it contains site-specific values.
@@ -92,6 +140,14 @@ NETWORKAUTH_HEALTH_TIMEOUT=$health_timeout
 NETWORKAUTH_LOG_MAX_SIZE=$log_max_size
 NETWORKAUTH_LOG_MAX_FILE=$log_max_file
 NETWORKAUTH_PULL_IMAGES=$pull_images
+NETWORKAUTH_DOCKER_REGISTRY=$docker_registry
+NETWORKAUTH_APT_MIRROR=$apt_mirror
+NETWORKAUTH_APT_SECURITY_MIRROR=$apt_security_mirror
+NETWORKAUTH_NPM_REGISTRY=$npm_registry
+NETWORKAUTH_GOPROXY=$goproxy
+NETWORKAUTH_BASE_NODE_IMAGE=$base_node_image
+NETWORKAUTH_BASE_GOLANG_IMAGE=$base_golang_image
+NETWORKAUTH_BASE_DEBIAN_IMAGE=$base_debian_image
 EOF
         chmod 600 "$ENV_FILE"
         info "已生成 ${ENV_FILE}，请按反代主机实际地址修改 NETWORKAUTH_TRUSTED_PROXIES"
@@ -105,8 +161,33 @@ env_value() {
     printf '%s' "${value:-$fallback}"
 }
 
+set_env_value() {
+    local key=$1 value=$2 tmp
+    tmp=$(mktemp "$ENV_FILE.tmp.XXXXXX")
+    awk -F= -v wanted="$key" -v replacement="$value" '
+        BEGIN { found = 0 }
+        $1 == wanted { print wanted "=" replacement; found = 1; next }
+        { print }
+        END { if (!found) print wanted "=" replacement }
+    ' "$ENV_FILE" >"$tmp" || die "无法更新 $ENV_FILE"
+    chmod 600 "$tmp"
+    mv -f -- "$tmp" "$ENV_FILE"
+}
+
+validate_docker_registry() {
+    local registry=$1
+    [[ "$registry" != *://* && "$registry" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]*$ ]] ||
+        die 'NETWORKAUTH_DOCKER_REGISTRY 必须是 registry 主机/前缀（不能包含 http:// 或 https://）'
+}
+
+validate_download_url() {
+    local name=$1 value=$2 pattern='^https?://[A-Za-z0-9./:_~?&=%+,-]+$'
+    [[ "$name" == NETWORKAUTH_GOPROXY && "$value" == direct ]] && return 0
+    [[ "$value" =~ $pattern ]] || die "$name 必须是安全的 http(s) URL"
+}
+
 validate_env_values() {
-    local port uid gid timeout bind_address container_name image log_size log_file pull_images
+    local port uid gid timeout bind_address container_name image log_size log_file pull_images docker_registry apt_mirror apt_security_mirror npm_registry goproxy base_node_image base_golang_image base_debian_image
     port=$(env_value NETWORKAUTH_PORT 8080)
     uid=$(env_value NETWORKAUTH_UID 10001)
     gid=$(env_value NETWORKAUTH_GID 10001)
@@ -117,6 +198,14 @@ validate_env_values() {
     log_size=$(env_value NETWORKAUTH_LOG_MAX_SIZE 10m)
     log_file=$(env_value NETWORKAUTH_LOG_MAX_FILE 5)
     pull_images=$(env_value NETWORKAUTH_PULL_IMAGES 1)
+    docker_registry=$(env_value NETWORKAUTH_DOCKER_REGISTRY docker.io)
+    apt_mirror=$(env_value NETWORKAUTH_APT_MIRROR http://deb.debian.org/debian)
+    apt_security_mirror=$(env_value NETWORKAUTH_APT_SECURITY_MIRROR http://deb.debian.org/debian-security)
+    npm_registry=$(env_value NETWORKAUTH_NPM_REGISTRY https://registry.npmmirror.com)
+    goproxy=$(env_value NETWORKAUTH_GOPROXY https://goproxy.cn,direct)
+    base_node_image=$(env_value NETWORKAUTH_BASE_NODE_IMAGE node:22-bookworm)
+    base_golang_image=$(env_value NETWORKAUTH_BASE_GOLANG_IMAGE golang:1.25-bookworm)
+    base_debian_image=$(env_value NETWORKAUTH_BASE_DEBIAN_IMAGE debian:bookworm-slim)
     [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )) || die 'NETWORKAUTH_PORT 必须是 1-65535'
     [[ "$uid" =~ ^[0-9]+$ && "$gid" =~ ^[0-9]+$ ]] || die 'NETWORKAUTH_UID/GID 必须是数字'
     [[ "$timeout" =~ ^[0-9]+$ ]] || die 'NETWORKAUTH_HEALTH_TIMEOUT 必须是非负整数'
@@ -126,6 +215,14 @@ validate_env_values() {
     [[ "$log_size" =~ ^[0-9]+[kKmMgG]$ ]] || die 'NETWORKAUTH_LOG_MAX_SIZE 必须如 10m'
     [[ "$log_file" =~ ^[1-9][0-9]*$ ]] || die 'NETWORKAUTH_LOG_MAX_FILE 必须是正整数'
     [[ "$pull_images" == 0 || "$pull_images" == 1 ]] || die 'NETWORKAUTH_PULL_IMAGES 必须是 0 或 1'
+    validate_docker_registry "$docker_registry"
+    validate_download_url NETWORKAUTH_APT_MIRROR "$apt_mirror"
+    validate_download_url NETWORKAUTH_APT_SECURITY_MIRROR "$apt_security_mirror"
+    validate_download_url NETWORKAUTH_NPM_REGISTRY "$npm_registry"
+    validate_download_url NETWORKAUTH_GOPROXY "$goproxy"
+    for base_image in "$base_node_image" "$base_golang_image" "$base_debian_image"; do
+        [[ "$base_image" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]] || die "基础镜像引用非法: $base_image"
+    done
 }
 
 
@@ -318,6 +415,56 @@ SQLite 数据库、配置和日志位于 deploy/networkauth-{data,config,logs}�
 EOF
 }
 
+mirror_profile() {
+    local profile=${1:-show} registry
+    case "$profile" in
+        show)
+            ensure_env
+            printf 'NETWORKAUTH_DOCKER_REGISTRY=%s\n' "$(env_value NETWORKAUTH_DOCKER_REGISTRY docker.io)"
+            printf 'NETWORKAUTH_APT_MIRROR=%s\n' "$(env_value NETWORKAUTH_APT_MIRROR http://deb.debian.org/debian)"
+            printf 'NETWORKAUTH_APT_SECURITY_MIRROR=%s\n' "$(env_value NETWORKAUTH_APT_SECURITY_MIRROR http://deb.debian.org/debian-security)"
+            printf 'NETWORKAUTH_NPM_REGISTRY=%s\n' "$(env_value NETWORKAUTH_NPM_REGISTRY https://registry.npmmirror.com)"
+            printf 'NETWORKAUTH_GOPROXY=%s\n' "$(env_value NETWORKAUTH_GOPROXY https://goproxy.cn,direct)"
+            printf 'NETWORKAUTH_BASE_NODE_IMAGE=%s\n' "$(env_value NETWORKAUTH_BASE_NODE_IMAGE node:22-bookworm)"
+            printf 'NETWORKAUTH_BASE_GOLANG_IMAGE=%s\n' "$(env_value NETWORKAUTH_BASE_GOLANG_IMAGE golang:1.25-bookworm)"
+            printf 'NETWORKAUTH_BASE_DEBIAN_IMAGE=%s\n' "$(env_value NETWORKAUTH_BASE_DEBIAN_IMAGE debian:bookworm-slim)"
+            printf 'NETWORKAUTH_PULL_IMAGES=%s\n' "$(env_value NETWORKAUTH_PULL_IMAGES 1)"
+            ;;
+        china)
+            registry=${2:-m.daocloud.io/docker.io}
+            validate_docker_registry "$registry"
+            ensure_env
+            set_env_value NETWORKAUTH_DOCKER_REGISTRY "$registry"
+            set_env_value NETWORKAUTH_APT_MIRROR https://mirrors.tuna.tsinghua.edu.cn/debian
+            set_env_value NETWORKAUTH_APT_SECURITY_MIRROR https://mirrors.tuna.tsinghua.edu.cn/debian-security
+            set_env_value NETWORKAUTH_NPM_REGISTRY https://registry.npmmirror.com
+            set_env_value NETWORKAUTH_GOPROXY https://goproxy.cn,direct
+            set_env_value NETWORKAUTH_BASE_NODE_IMAGE networkauth-base-node:22-bookworm
+            set_env_value NETWORKAUTH_BASE_GOLANG_IMAGE networkauth-base-golang:1.25-bookworm
+            set_env_value NETWORKAUTH_BASE_DEBIAN_IMAGE networkauth-base-debian:bookworm-slim
+            set_env_value NETWORKAUTH_PULL_IMAGES 0
+            info "已切换中国大陆下载源；Docker 镜像前缀: $registry"
+            info '如需强制检查最新基础镜像，可将 NETWORKAUTH_PULL_IMAGES 改为 1'
+            ;;
+        official)
+            ensure_env
+            set_env_value NETWORKAUTH_DOCKER_REGISTRY docker.io
+            set_env_value NETWORKAUTH_APT_MIRROR http://deb.debian.org/debian
+            set_env_value NETWORKAUTH_APT_SECURITY_MIRROR http://deb.debian.org/debian-security
+            set_env_value NETWORKAUTH_NPM_REGISTRY https://registry.npmjs.org
+            set_env_value NETWORKAUTH_GOPROXY https://proxy.golang.org,direct
+            set_env_value NETWORKAUTH_BASE_NODE_IMAGE node:22-bookworm
+            set_env_value NETWORKAUTH_BASE_GOLANG_IMAGE golang:1.25-bookworm
+            set_env_value NETWORKAUTH_BASE_DEBIAN_IMAGE debian:bookworm-slim
+            set_env_value NETWORKAUTH_PULL_IMAGES 1
+            info '已切换官方下载源'
+            ;;
+        *)
+            die "未知镜像源配置: $profile（可用 china、official、show）"
+            ;;
+    esac
+}
+
 update_service() {
     ensure_env
     ensure_config
@@ -394,6 +541,9 @@ usage() {
   config       打开配置文件编辑（使用 $EDITOR）
   shell        进入运行中的容器
   setup        打印应用 UUID/密钥、账号和单设备绑定的前端配置步骤
+  mirror show  查看 Docker、APT、npm、Go 当前下载源
+  mirror china [registry]  切换中国大陆下载源（默认 docker.m.daocloud.io）
+  mirror official         恢复官方下载源
 EOF
 }
 
@@ -405,6 +555,7 @@ main() {
     case "$command_name" in
         help|-h|--help) usage; return 0 ;;
         setup) setup_guidance; return 0 ;;
+        mirror) mirror_profile "$@"; return 0 ;;
     esac
     validate_prerequisites
     case "$command_name" in

@@ -111,6 +111,8 @@ NetworkAuth/
 git clone -b wws_dev https://github.com/customer-agent/NetworkAuth.git
 cd NetworkAuth
 chmod +x tools/networkauth.sh
+# 中国大陆网络先切换镜像源
+tools/networkauth.sh mirror china
 tools/networkauth.sh install
 ```
 
