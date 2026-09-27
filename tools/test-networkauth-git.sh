@@ -69,6 +69,10 @@ write_old_git() {
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s\n' "$@" >>"$NETWORKAUTH_GIT_ARGS_LOG"
+[[ "$PWD" == "$NETWORKAUTH_EXPECTED_GIT_ROOT" ]] || {
+    printf 'Git ran outside the intended checkout\n' >&2
+    exit 78
+}
 for arg in "$@"; do
     if [[ "$arg" == -C ]]; then
         printf 'Unknown option: -C\n' >&2
@@ -98,10 +102,12 @@ EOF
 }
 
 run_install() {
-    local root=$1
+    local root=$1 expected_root
+    expected_root=$(CDPATH= cd -- "$root" && pwd -P)
     NETWORKAUTH_UID="$TEST_UID" NETWORKAUTH_GID="$TEST_GID" \
         NETWORKAUTH_DOCKER_LOG="$root/docker.log" \
         NETWORKAUTH_GIT_ARGS_LOG="$root/git-args.log" \
+        NETWORKAUTH_EXPECTED_GIT_ROOT="$expected_root" \
         PATH="$root/bin:$PATH" \
         "$root/tools/networkauth.sh" install
 }
@@ -124,6 +130,8 @@ assert_old_git_install() {
     fi
     grep -Fxq -- '-c' "$root/git-args.log" ||
         fail 'deployment script did not set Git safe.directory through -c'
+    grep -Fxq -- 'status' "$root/git-args.log" ||
+        fail 'deployment script skipped the Git status check'
 }
 
 assert_status_failure_stops_build() {

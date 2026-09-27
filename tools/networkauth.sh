@@ -74,14 +74,16 @@ docker_pull_with_retry() {
     local source=$1 retries timeout_seconds attempt=1 status delay
     retries=$(env_value NETWORKAUTH_PULL_RETRIES 3)
     timeout_seconds=$(env_value NETWORKAUTH_PULL_TIMEOUT 600)
+    if (( timeout_seconds > 0 )) && ! command -v timeout >/dev/null 2>&1; then
+        info '未找到 coreutils timeout，无法限制单次拉取时间；当前仅使用 Docker 自身的超时'
+    fi
     while (( attempt <= retries )); do
-        info "正在拉取基础镜像: $source（第 ${attempt}/${retries} 次）"
-        # Docker keeps completed layers when a pull is interrupted.  A retry
-        # therefore resumes the same download instead of starting over.  GNU
-        # coreutils `timeout` is optional; when it is unavailable, the Docker
-        # daemon's own network timeouts still apply.
+        info "正在拉取基础镜像: ${source}（第 ${attempt}/${retries} 次）"
+        # Docker owns the layer cache. Retrying can reuse retained layers,
+        # but interrupted or not-yet-registered layers may need downloading
+        # again. Never delete the cache or promise byte-level resume.
         if command -v timeout >/dev/null 2>&1 && (( timeout_seconds > 0 )); then
-            if timeout "$timeout_seconds" docker pull "$source"; then
+            if timeout --kill-after=10 "$timeout_seconds" docker pull "$source"; then
                 return 0
             else
                 status=$?
@@ -92,17 +94,19 @@ docker_pull_with_retry() {
             status=$?
         fi
 
-        # Preserve Ctrl-C/Ctrl-\\ semantics.  A timeout (124) and ordinary
-        # network/registry failures are safe to retry because Docker resumes
-        # completed layers from its local content store.
+        # Do not retry an explicit interruption of the client. A timeout
+        # (124, or 137 after the kill grace period) is safe to retry.
         case "$status" in
             130|131|143) die "基础镜像拉取被中断: $source" ;;
+            124) info "基础镜像单次拉取超时（${timeout_seconds} 秒）: $source" ;;
         esac
         if (( attempt == retries )); then
-            die "无法拉取基础镜像: $source（已重试 ${retries} 次）"
+            info "可单独执行以排查 Docker 下载: docker pull $source"
+            info 'Linux Docker 日志: sudo journalctl -u docker --since "15 minutes ago" --no-pager'
+            die "无法拉取基础镜像: ${source}（已尝试 ${retries} 次，最后状态 ${status}）"
         fi
         delay=$(( attempt * 5 ))
-        info "基础镜像拉取失败（状态 $status），${delay} 秒后重试；已完成的镜像层会被复用"
+        info "基础镜像拉取失败（状态 ${status}），${delay} 秒后重试；保留 Docker 已有缓存"
         sleep "$delay"
         attempt=$(( attempt + 1 ))
     done
@@ -286,7 +290,7 @@ validate_env_values() {
     [[ "$log_file" =~ ^[1-9][0-9]*$ ]] || die 'NETWORKAUTH_LOG_MAX_FILE 必须是正整数'
     [[ "$pull_images" == 0 || "$pull_images" == 1 ]] || die 'NETWORKAUTH_PULL_IMAGES 必须是 0 或 1'
     [[ "$pull_retries" =~ ^[1-9][0-9]*$ ]] || die 'NETWORKAUTH_PULL_RETRIES 必须是正整数'
-    [[ "$pull_timeout" =~ ^[0-9]+$ ]] || die 'NETWORKAUTH_PULL_TIMEOUT 必须是非负整数（0 表示不使用 timeout）'
+    [[ "$pull_timeout" =~ ^(0|[1-9][0-9]*)$ ]] || die 'NETWORKAUTH_PULL_TIMEOUT 必须是非负整数且无前导零（0 表示不使用 timeout）'
     validate_docker_registry "$docker_registry"
     validate_download_url NETWORKAUTH_APT_MIRROR "$apt_mirror"
     validate_download_url NETWORKAUTH_APT_SECURITY_MIRROR "$apt_security_mirror"
@@ -336,7 +340,7 @@ ensure_config() {
     if [[ "$(id -u)" == 0 ]] && [[ "$uid" =~ ^[0-9]+$ ]] && [[ "$gid" =~ ^[0-9]+$ ]]; then
         chown -R "$uid:$gid" "$CONFIG_DIR" "$DATA_DIR" "$LOG_DIR"
     elif [[ "$(id -u)" != "$uid" ]]; then
-        die "持久化目录需要 UID $uid；请以 root 运行一次或调整 NETWORKAUTH_UID/GID"
+        die "持久化目录需要 UID ${uid}；请以 root 运行一次或调整 NETWORKAUTH_UID/GID"
     fi
     if [[ -f "$CONFIG_FILE" ]]; then
         # Preserve user-managed settings while keeping the secret-bearing
@@ -444,7 +448,7 @@ backup() (
       false)
         ;;
       *)
-        die "无法确认容器运行状态，已取消备份: $container（状态=$running_state）"
+        die "无法确认容器运行状态，已取消备份: ${container}（状态=${running_state}）"
         ;;
     esac
 
@@ -534,7 +538,7 @@ mirror_profile() {
             info '已切换官方下载源'
             ;;
         *)
-            die "未知镜像源配置: $profile（可用 china、official、show）"
+            die "未知镜像源配置: ${profile}（可用 china、official、show）"
             ;;
     esac
 }

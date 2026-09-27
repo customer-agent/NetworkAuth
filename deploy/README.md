@@ -36,16 +36,32 @@ tools/networkauth.sh mirror show
 拥堵，无法保证所有中国网络和时段都可达；生产环境也可以在自己的网络中配置 Docker
 Registry pull-through cache。
 
-基础镜像拉取默认失败后重试 3 次，每次使用 Docker 已保存的镜像层继续下载，并以
-`NETWORKAUTH_PULL_TIMEOUT=600`（秒）限制单次拉取时间；可在
-`deploy/networkauth.env` 中调整 `NETWORKAUTH_PULL_RETRIES` 和
-`NETWORKAUTH_PULL_TIMEOUT`。将超时设为 `0` 可关闭脚本层超时（仍受 Docker daemon
-网络超时影响）。如果手动按 `Ctrl-C` 中断，脚本会退出而不会自动继续，下一次安装会
-复用已经下载完成的层。
+使用自定义镜像源时，每个基础镜像默认最多尝试 3 次（首次加两次重试），在系统
+提供 coreutils `timeout` 时，以 `NETWORKAUTH_PULL_TIMEOUT=600`（秒）限制单次
+拉取的总时长，再给予 10 秒退出宽限。它不是“无下载进度”超时；连接很慢但一直有
+进度时可调大该值。可在 `deploy/networkauth.env` 中调整
+`NETWORKAUTH_PULL_RETRIES` 和 `NETWORKAUTH_PULL_TIMEOUT`，旧配置缺少这两项时
+自动使用默认值。将超时设为 `0` 可关闭脚本层超时；未安装 `timeout` 时会明确提示。
+手动按 `Ctrl-C` 中断后不会自动重试。脚本保留 Docker 缓存，完整的镜像可直接复用；
+未完成或尚未写入缓存的层可能重新下载，不保证字节级断点续传。
 
-如果基础镜像仍长时间停在多个 `Waiting` 层，低带宽主机可以在 Docker daemon 的
-`/etc/docker/daemon.json` 中将 `max-concurrent-downloads` 调为 `1` 后重启 Docker；
-该设置由主机管理员维护，脚本不会自动改动 Docker daemon 配置。
+如果进度长时间不变，可以先单独运行当前镜像的拉取命令，确认是否脱离部署脚本
+仍然停滞；同时在另一终端查看 Docker daemon 日志：
+
+```bash
+docker pull m.daocloud.io/docker.io/library/golang:1.25-bookworm
+sudo journalctl -u docker --since "15 minutes ago" --no-pager
+```
+
+`Waiting` 是 Docker 镜像层的队列状态，不能单凭它判断网络故障。Docker 默认并发
+下载 3 层，[官方文档](https://docs.docker.com/reference/cli/docker/image/pull/)
+建议低带宽环境降低并发数。若确认有并发下载超时，可以在现有
+`/etc/docker/daemon.json` 中合并 `"max-concurrent-downloads": 1` 后安排重启 Docker；
+不要覆盖原有配置，重启可能影响该主机上的其他容器。该设置由主机管理员维护。
+Linux 日志位置参见 [Docker daemon 日志文档](https://docs.docker.com/engine/daemon/logs/)。
+
+脚本兼容 Git 1.8.3.1（不使用 `git -C`）。若 Git 状态检查本身失败，会在拉取或
+构建前退出，不会将失败误判为“源码干净”。
 
 如果前端在另一台公网主机上反代，脚本默认监听 `0.0.0.0:8080`；请在防火墙中只
 允许公网反代主机访问该端口，也可以把 `NETWORKAUTH_BIND_ADDRESS` 改为具体内网
