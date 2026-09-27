@@ -28,9 +28,21 @@ ensure_source_repo() {
     [[ -e "$ROOT_DIR/.git" ]] || die "源码目录不是 Git 仓库: $ROOT_DIR"
 }
 
+git_repo() {
+    # Git 1.8.5 added `git -C`; older distributions still commonly ship a
+    # Git that supports `-c` but rejects `-C` (the error is printed as
+    # "Unknown option: -C").  Running from the checkout directory keeps the
+    # deployment script compatible with those hosts while retaining the
+    # safe.directory override needed by newer Git installations.
+    (
+        cd -- "$ROOT_DIR" || die "无法进入源码目录: $ROOT_DIR"
+        git -c "safe.directory=$ROOT_DIR" "$@"
+    )
+}
+
 source_is_clean() {
     ensure_source_repo
-    [[ -z "$(git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" status --porcelain --untracked-files=all)" ]] ||
+    [[ -z "$(git_repo status --porcelain --untracked-files=all)" ]] ||
         die '源码工作区有未提交修改或未跟踪文件，请提交或清理后再构建/升级'
 }
 
@@ -471,10 +483,10 @@ update_service() {
     source_is_clean
     backup
     local branch
-    branch=$(git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" symbolic-ref --quiet --short HEAD) ||
+    branch=$(git_repo symbolic-ref --quiet --short HEAD) ||
         die '升级要求当前 checkout 位于一个本地分支上'
-    git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" fetch --tags --prune origin
-    git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" pull --ff-only origin "$branch"
+    git_repo fetch --tags --prune origin
+    git_repo pull --ff-only origin "$branch"
     build_service
     compose up -d --no-build
     compose ps
