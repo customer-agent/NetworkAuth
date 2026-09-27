@@ -70,6 +70,44 @@ build_service() {
     esac
 }
 
+docker_pull_with_retry() {
+    local source=$1 retries timeout_seconds attempt=1 status delay
+    retries=$(env_value NETWORKAUTH_PULL_RETRIES 3)
+    timeout_seconds=$(env_value NETWORKAUTH_PULL_TIMEOUT 1800)
+    while (( attempt <= retries )); do
+        info "正在拉取基础镜像: $source（第 ${attempt}/${retries} 次）"
+        # Docker keeps completed layers when a pull is interrupted.  A retry
+        # therefore resumes the same download instead of starting over.  GNU
+        # coreutils `timeout` is optional; when it is unavailable, the Docker
+        # daemon's own network timeouts still apply.
+        if command -v timeout >/dev/null 2>&1 && (( timeout_seconds > 0 )); then
+            if timeout "$timeout_seconds" docker pull "$source"; then
+                return 0
+            else
+                status=$?
+            fi
+        elif docker pull "$source"; then
+            return 0
+        else
+            status=$?
+        fi
+
+        # Preserve Ctrl-C/Ctrl-\\ semantics.  A timeout (124) and ordinary
+        # network/registry failures are safe to retry because Docker resumes
+        # completed layers from its local content store.
+        case "$status" in
+            130|131|143) die "基础镜像拉取被中断: $source" ;;
+        esac
+        if (( attempt == retries )); then
+            die "无法拉取基础镜像: $source（已重试 ${retries} 次）"
+        fi
+        delay=$(( attempt * 5 ))
+        info "基础镜像拉取失败（状态 $status），${delay} 秒后重试；已完成的镜像层会被复用"
+        sleep "$delay"
+        attempt=$(( attempt + 1 ))
+    done
+}
+
 prepare_base_images() {
     local registry pull_images source local_tag image_name image_tag
     registry=$(env_value NETWORKAUTH_DOCKER_REGISTRY docker.io)
@@ -87,10 +125,20 @@ prepare_base_images() {
             debian) image_tag=bookworm-slim; local_tag=networkauth-base-debian:bookworm-slim ;;
         esac
         source="$registry/library/$image_name:$image_tag"
-        if [[ "$pull_images" == 1 ]] || ! docker image inspect "$local_tag" >/dev/null 2>&1; then
-            info "正在拉取基础镜像: $source"
-            docker pull "$source" || die "无法拉取基础镜像: $source"
-            docker tag "$source" "$local_tag"
+        if [[ "$pull_images" == 1 ]]; then
+            docker_pull_with_retry "$source"
+            docker tag "$source" "$local_tag" || die "无法标记基础镜像: $source -> $local_tag"
+        elif docker image inspect "$local_tag" >/dev/null 2>&1; then
+            :
+        elif docker image inspect "$source" >/dev/null 2>&1; then
+            # A previous run may have completed the source pull just before
+            # being interrupted while tagging. Reuse it without another
+            # registry request.
+            info "复用已拉取的基础镜像: $source"
+            docker tag "$source" "$local_tag" || die "无法标记基础镜像: $source -> $local_tag"
+        else
+            docker_pull_with_retry "$source"
+            docker tag "$source" "$local_tag" || die "无法标记基础镜像: $source -> $local_tag"
         fi
         case "$image_name" in
             node) set_env_value NETWORKAUTH_BASE_NODE_IMAGE "$local_tag" ;;
@@ -106,7 +154,7 @@ compose() {
 
 ensure_env() {
     if [[ ! -f "$ENV_FILE" ]]; then
-        local run_uid run_gid bind_address bind_port container_name image image_tag timezone trusted_proxies cors_origins health_timeout log_max_size log_max_file pull_images docker_registry apt_mirror apt_security_mirror npm_registry goproxy base_node_image base_golang_image base_debian_image
+        local run_uid run_gid bind_address bind_port container_name image image_tag timezone trusted_proxies cors_origins health_timeout log_max_size log_max_file pull_images pull_retries pull_timeout docker_registry apt_mirror apt_security_mirror npm_registry goproxy base_node_image base_golang_image base_debian_image
         run_uid=${NETWORKAUTH_UID:-$(id -u)}
         run_gid=${NETWORKAUTH_GID:-$(id -g)}
         if [[ "$run_uid" == 0 ]]; then
@@ -125,6 +173,8 @@ ensure_env() {
         log_max_size=${NETWORKAUTH_LOG_MAX_SIZE:-10m}
         log_max_file=${NETWORKAUTH_LOG_MAX_FILE:-5}
         pull_images=${NETWORKAUTH_PULL_IMAGES:-1}
+        pull_retries=${NETWORKAUTH_PULL_RETRIES:-3}
+        pull_timeout=${NETWORKAUTH_PULL_TIMEOUT:-1800}
         docker_registry=${NETWORKAUTH_DOCKER_REGISTRY:-docker.io}
         apt_mirror=${NETWORKAUTH_APT_MIRROR:-http://deb.debian.org/debian}
         apt_security_mirror=${NETWORKAUTH_APT_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
@@ -156,6 +206,8 @@ NETWORKAUTH_HEALTH_TIMEOUT=$health_timeout
 NETWORKAUTH_LOG_MAX_SIZE=$log_max_size
 NETWORKAUTH_LOG_MAX_FILE=$log_max_file
 NETWORKAUTH_PULL_IMAGES=$pull_images
+NETWORKAUTH_PULL_RETRIES=$pull_retries
+NETWORKAUTH_PULL_TIMEOUT=$pull_timeout
 NETWORKAUTH_DOCKER_REGISTRY=$docker_registry
 NETWORKAUTH_APT_MIRROR=$apt_mirror
 NETWORKAUTH_APT_SECURITY_MIRROR=$apt_security_mirror
@@ -203,7 +255,7 @@ validate_download_url() {
 }
 
 validate_env_values() {
-    local port uid gid timeout bind_address container_name image log_size log_file pull_images docker_registry apt_mirror apt_security_mirror npm_registry goproxy base_node_image base_golang_image base_debian_image
+    local port uid gid timeout bind_address container_name image log_size log_file pull_images pull_retries pull_timeout docker_registry apt_mirror apt_security_mirror npm_registry goproxy base_node_image base_golang_image base_debian_image
     port=$(env_value NETWORKAUTH_PORT 8080)
     uid=$(env_value NETWORKAUTH_UID 10001)
     gid=$(env_value NETWORKAUTH_GID 10001)
@@ -214,6 +266,8 @@ validate_env_values() {
     log_size=$(env_value NETWORKAUTH_LOG_MAX_SIZE 10m)
     log_file=$(env_value NETWORKAUTH_LOG_MAX_FILE 5)
     pull_images=$(env_value NETWORKAUTH_PULL_IMAGES 1)
+    pull_retries=$(env_value NETWORKAUTH_PULL_RETRIES 3)
+    pull_timeout=$(env_value NETWORKAUTH_PULL_TIMEOUT 1800)
     docker_registry=$(env_value NETWORKAUTH_DOCKER_REGISTRY docker.io)
     apt_mirror=$(env_value NETWORKAUTH_APT_MIRROR http://deb.debian.org/debian)
     apt_security_mirror=$(env_value NETWORKAUTH_APT_SECURITY_MIRROR http://deb.debian.org/debian-security)
@@ -231,6 +285,8 @@ validate_env_values() {
     [[ "$log_size" =~ ^[0-9]+[kKmMgG]$ ]] || die 'NETWORKAUTH_LOG_MAX_SIZE 必须如 10m'
     [[ "$log_file" =~ ^[1-9][0-9]*$ ]] || die 'NETWORKAUTH_LOG_MAX_FILE 必须是正整数'
     [[ "$pull_images" == 0 || "$pull_images" == 1 ]] || die 'NETWORKAUTH_PULL_IMAGES 必须是 0 或 1'
+    [[ "$pull_retries" =~ ^[1-9][0-9]*$ ]] || die 'NETWORKAUTH_PULL_RETRIES 必须是正整数'
+    [[ "$pull_timeout" =~ ^[0-9]+$ ]] || die 'NETWORKAUTH_PULL_TIMEOUT 必须是非负整数（0 表示不使用 timeout）'
     validate_docker_registry "$docker_registry"
     validate_download_url NETWORKAUTH_APT_MIRROR "$apt_mirror"
     validate_download_url NETWORKAUTH_APT_SECURITY_MIRROR "$apt_security_mirror"
@@ -445,6 +501,8 @@ mirror_profile() {
             printf 'NETWORKAUTH_BASE_GOLANG_IMAGE=%s\n' "$(env_value NETWORKAUTH_BASE_GOLANG_IMAGE golang:1.25-bookworm)"
             printf 'NETWORKAUTH_BASE_DEBIAN_IMAGE=%s\n' "$(env_value NETWORKAUTH_BASE_DEBIAN_IMAGE debian:bookworm-slim)"
             printf 'NETWORKAUTH_PULL_IMAGES=%s\n' "$(env_value NETWORKAUTH_PULL_IMAGES 1)"
+            printf 'NETWORKAUTH_PULL_RETRIES=%s\n' "$(env_value NETWORKAUTH_PULL_RETRIES 3)"
+            printf 'NETWORKAUTH_PULL_TIMEOUT=%s\n' "$(env_value NETWORKAUTH_PULL_TIMEOUT 1800)"
             ;;
         china)
             registry=${2:-m.daocloud.io/docker.io}

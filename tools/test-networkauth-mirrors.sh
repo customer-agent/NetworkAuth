@@ -158,6 +158,10 @@ for key in \
     [[ "$show_output" == *"$key=$value"* ]] ||
         fail "mirror show did not display $key=$value"
 done
+[[ "$show_output" == *'NETWORKAUTH_PULL_RETRIES=3'* ]] ||
+    fail 'mirror show did not display the default retry count'
+[[ "$show_output" == *'NETWORKAUTH_PULL_TIMEOUT=1800'* ]] ||
+    fail 'mirror show did not display the default pull timeout'
 
 # Scheme-bearing registry values are ambiguous in a Docker image reference;
 # reject them without changing even one byte of the existing env file.
