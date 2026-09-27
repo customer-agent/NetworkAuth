@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test China mirror profiles without pulling images
         run: bash tools/test-networkauth-mirrors.sh
+      - name: Test Git compatibility without Docker or network
+        run: bash tools/test-networkauth-git.sh
       - name: Build and start NetworkAuth
         env:
           NETWORKAUTH_BIND_ADDRESS: 127.0.0.1
