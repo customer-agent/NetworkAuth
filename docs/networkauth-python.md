@@ -19,7 +19,7 @@ export NETWORKAUTH_APP_UUID='替换为应用 UUID'
 export NETWORKAUTH_APP_SECRET='替换为应用密钥'
 export NETWORKAUTH_USERNAME='替换为终端账号'
 export NETWORKAUTH_PASSWORD='替换为终端密码'
-export NETWORKAUTH_MACHINE_CODE="$(hostname)-python-test"
+export NETWORKAUTH_MACHINE_CODE="$(cat /etc/machine-id 2>/dev/null || hostname)"
 export NETWORKAUTH_CLIENT_VERSION='python-api-test/1.0.0'
 
 python3 tools/networkauth_api.py login
@@ -51,7 +51,8 @@ API 20 的明文业务数据为：
 }
 ```
 
-`machine_code` 必须保持稳定。应用启用机器验证后，同一账号首次使用的机器码会
+`machine_code` 必须保持稳定。Linux 默认读取 `/etc/machine-id`，也可以按你的客户端
+统一使用其他稳定设备标识。应用启用机器验证后，同一账号首次使用的机器码会
 建立绑定；换机器测试可能返回设备数量或机器绑定相关错误。`version` 是必填字段，
 不要省略。
 

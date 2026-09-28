@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import sys
 import time
 from typing import Any, Dict, Optional
@@ -21,6 +22,19 @@ from urllib.request import Request, urlopen
 
 DEFAULT_BASE_URL = "https://auth.weisong.space"
 DEFAULT_USER_AGENT = "NetworkAuth-Python/1.0"
+
+
+def default_machine_code() -> str:
+    """Return a stable per-host default without making up a shared value."""
+    machine_id_path = "/etc/machine-id"
+    try:
+        with open(machine_id_path, "r", encoding="utf-8") as machine_id_file:
+            machine_id = machine_id_file.read().strip()
+        if machine_id:
+            return machine_id
+    except OSError:
+        pass
+    return platform.node() or "python-api-test"
 
 
 def compact_json(value: Any) -> str:
@@ -145,8 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument("--password", default=os.environ.get("NETWORKAUTH_PASSWORD"))
     login.add_argument(
         "--machine-code",
-        default=os.environ.get("NETWORKAUTH_MACHINE_CODE", "python-api-test"),
-        help="机器码；默认 python-api-test",
+        default=os.environ.get("NETWORKAUTH_MACHINE_CODE", default_machine_code()),
+        help="机器码；默认读取 /etc/machine-id，非 Linux 环境回退到主机名",
     )
     login.add_argument(
         "--version",
