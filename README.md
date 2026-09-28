@@ -4,6 +4,10 @@
 
 ## 功能特性
 
+客户端公开 API 的 Python 测试脚本和调用说明见
+[docs/networkauth-python.md](docs/networkauth-python.md)；已有完整协议说明见
+[docs/api-guide.md](docs/api-guide.md)。
+
 ### 🚀 核心功能
 - **应用管理**: 支持应用的增删改查、版本管理、状态控制、密钥管理
 - **API接口管理**: 支持多种加密算法的API接口配置（RC4、RSA、易加密等）
