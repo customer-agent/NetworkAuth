@@ -55,7 +55,40 @@ API 20 的明文业务数据为：
 建立绑定；换机器测试可能返回设备数量或机器绑定相关错误。`version` 是必填字段，
 不要省略。
 
-## 2. 调用其他不加密接口
+## 2. 机器码转绑
+
+如果返回 `机器码未绑定，请先进行机器码转绑`，说明账号已有其他机器绑定，当前
+`machine_code` 不能直接登录。后台先确认应用启用了“转绑”（API 51）及机器码转绑，
+然后用账号密码查询当前绑定设备：
+
+```bash
+python3 tools/networkauth_api.py rebind
+```
+
+查询只读，不带 `machine_code`，会返回 `devices` 列表。单设备限制下，可直接把账号
+转到当前测试机；多设备已满时，把要替换的旧机器码传给 `--replace-machine`：
+
+```bash
+export NETWORKAUTH_MACHINE_CODE="$(cat /etc/machine-id)"
+python3 tools/networkauth_api.py rebind \
+  --machine-code "$NETWORKAUTH_MACHINE_CODE" \
+  --device-name "Linux test"
+```
+
+如果返回“设备数已达上限，请指定要替换的设备”，先从上一步的 `devices` 中选出旧
+机器码，再执行：
+
+```bash
+python3 tools/networkauth_api.py rebind \
+  --machine-code "$NETWORKAUTH_MACHINE_CODE" \
+  --replace-machine '要替换的旧机器码' \
+  --device-name "Linux test"
+```
+
+转绑成功后，再执行 `login`。转绑次数、免费次数和扣费由应用后台设置控制；如果
+应用还启用了 IP 验证，API 51 也会按当前请求 IP 执行对应的 IP 转绑。
+
+## 3. 调用其他不加密接口
 
 脚本的 `call` 子命令可发送任意 JSON 对象。下面调用 API 1 获取公告和应用能力：
 
@@ -80,7 +113,7 @@ python3 tools/networkauth_api.py call \
 * `2`：客户端版本过低，需要按返回的 `update` 信息升级；
 * `3`：达到多开上限且后台配置为手动顶号，需要按返回的 `sessions` 选择会话。
 
-## 3. 签名和请求格式
+## 4. 签名和请求格式
 
 所有公开接口使用同一个地址：
 
@@ -110,7 +143,7 @@ SHA256(app_uuid|api_type|data|timestamp|app_secret).hexdigest().upper()
 服务端只接受时间偏差不超过约 300 秒的请求。因此签名后应立即发送，服务器和
 客户端的系统时间需要同步。
 
-## 4. NetworkAuth 后台配置检查
+## 5. NetworkAuth 后台配置检查
 
 对 API 20 登录测试，后台至少确认：
 
@@ -132,7 +165,7 @@ API 40（获取到期时间）只在调用方明确使用该查询时启用。
 替你解密业务数据；应按 [api-guide.md](./api-guide.md) 的密钥方向实现对应客户端。
 联调阶段建议先使用“不加密”确认签名、账号、机器码和版本逻辑均正常，再启用加密。
 
-## 5. 常见错误
+## 6. 常见错误
 
 * `接口已停用`：应用的 API 20 状态仍为禁用，或请求使用了另一个应用 UUID。
 * `签名校验失败`：签名使用的 `data` 与实际发送的字符串不完全一致，或应用密钥不匹配。

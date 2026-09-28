@@ -156,6 +156,24 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument("--device-name", default=os.environ.get("NETWORKAUTH_DEVICE_NAME"))
     login.add_argument("--raw", action="store_true", help="不解析不加密返回 data，直接打印信封")
 
+    rebind = subparsers.add_parser(
+        "rebind", help="调用 API 51 查询或转绑机器码（不需要登录令牌）"
+    )
+    common_options(rebind)
+    rebind.add_argument("--username", default=os.environ.get("NETWORKAUTH_USERNAME"))
+    rebind.add_argument("--password", default=os.environ.get("NETWORKAUTH_PASSWORD"))
+    rebind.add_argument(
+        "--machine-code",
+        default=None,
+        help="新机器码；省略时只查询当前绑定设备",
+    )
+    rebind.add_argument(
+        "--replace-machine",
+        help="多设备已达上限时，要替换的旧机器码",
+    )
+    rebind.add_argument("--device-name", default=os.environ.get("NETWORKAUTH_DEVICE_NAME"))
+    rebind.add_argument("--raw", action="store_true", help="不解析不加密返回 data，直接打印信封")
+
     call = subparsers.add_parser("call", help="调用任意公开接口（默认按不加密处理返回）")
     common_options(call)
     call.add_argument("--api-type", type=int, required=True)
@@ -178,6 +196,18 @@ def run(args: argparse.Namespace) -> int:
         if args.device_name:
             payload["device_name"] = args.device_name
         api_type = 20
+    elif args.command == "rebind":
+        payload = {
+            "username": require(args.username, "--username/NETWORKAUTH_USERNAME"),
+            "password": require(args.password, "--password/NETWORKAUTH_PASSWORD"),
+        }
+        if args.machine_code:
+            payload["machine_code"] = args.machine_code
+        if args.replace_machine:
+            payload["replace_machine"] = args.replace_machine
+        if args.device_name:
+            payload["device_name"] = args.device_name
+        api_type = 51
     else:
         payload = parse_json_object(args.data_json, "--data-json")
         api_type = args.api_type
